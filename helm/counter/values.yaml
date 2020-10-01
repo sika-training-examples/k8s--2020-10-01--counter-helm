@@ -1,0 +1,4 @@
+# Required
+host: null
+# Optional
+replicas: 2

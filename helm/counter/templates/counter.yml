@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    release: {{ .Release.Name }}
+    project: counter
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    release: {{ .Release.Name }}
+    project: counter
+spec:
+  serviceName: redis
+  selector:
+    matchLabels:
+      project: counter
+      app: redis
+      release: {{ .Release.Name }}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        project: counter
+        app: redis
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: redis
+          image: redis
+          resources:
+            requests:
+              cpu: 30m
+              memory: 50Mi
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - mountPath: /data
+              name: data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-redis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    project: counter
+    release: {{ .Release.Name }}
+spec:
+  ports:
+    - port: 6379
+  selector:
+    project: counter
+    app: redis
+    release: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-counter
+  labels:
+    project: counter
+spec:
+  selector:
+    matchLabels:
+      project: counter
+      app: counter
+      release: {{ .Release.Name }}
+  replicas: {{.Values.replicas}}
+  template:
+    metadata:
+      labels:
+        project: counter
+        app: counter
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: counter
+          image: ondrejsika/counter
+          resources:
+            requests:
+              cpu: 20m
+              memory: 10Mi
+          env:
+            - name: REDIS
+              value: {{ .Release.Name }}-redis
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-counter
+  labels:
+    project: counter
+    release: {{ .Release.Name }}
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+  selector:
+    project: counter
+    app: counter
+    release: {{ .Release.Name }}
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-counter
+  labels:
+    project: counter
+    release: {{ .Release.Name }}
+spec:
+  rules:
+    - host: {{ required "A valid .Values.host entry required!" .Values.host }}
+      http:
+        paths:
+          - path: /
+            backend:
+              serviceName: {{ .Release.Name }}-counter
+              servicePort: 80
